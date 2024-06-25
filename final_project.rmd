@@ -90,7 +90,7 @@ The areas themselves must be areas characterized by blight which means areas tha
 
 ## Data Variable and Variable Characteristics
 
-```{r echo=FALSE, results='hide'}
+```{r echo=FALSE, results='hide', eval=FALSE}
 cook_fin_acs = 
   get_acs(
     geography = "tract",
@@ -106,6 +106,9 @@ cook_fin_acs =
     geometry = T,
     cache_table = T
   )
+
+# st_write(cook_fin_acs, "cook_fin_acs.shp", append=FALSE)
+write_csv(cook_fin_acs, "cook_fin_acs.csv")
 
 cook_acs = get_acs(
   geography = "tract",
@@ -123,7 +126,22 @@ cook_acs = get_acs(
   geometry = T,
   cache_table = T
 )
+
+# st_write(cook_acs, "cook_acs.shp", append=FALSE)
+write_csv(cook_acs, "cook_acs.csv")
 ```
+
+```{r echo=FALSE, results='hide'}
+# cook_fin_acs = st_read("cook_fin_acs.shp")
+# cook_acs = st_read("cook_acs.shp")
+cook_fin_acs =
+  read_csv("cook_fin_acs.csv") %>%
+  mutate(GEOID = as.character(GEOID))
+cook_acs =
+  read_csv("cook_acs.csv") %>%
+  mutate(GEOID = as.character(GEOID))
+```
+
 
 ```{r}
 chicago_transit_acs_tif =
@@ -192,7 +210,9 @@ econ_zone_matrix = econ_zone_baked %>% select(c("lat":"mean_commute_minutesM"))
 
 ```{r}
 points = econ_zone_matrix
+```
 
+```{r K-Means Clustering}
 kclusts =
   tibble(k = 1:9) %>%
   mutate(
@@ -283,14 +303,30 @@ fviz_cluster(econ_means,
 
 ## Kernal K-Means Clustering
 
-```{r}
-kkclusts =
-  tibble(k = 1:9) %>%
+```{r eval=FALSE}
+tibble(k = list(1:9)) %>%
   mutate(
     kkclust = map(
       k,
       ~ kkmeans(
-        as.matrix(points),
+        x = as.matrix(points),
+        centers = .x,
+        kernel = 'rbfdot',
+        kpar = "automatic"
+      )
+    )
+  )
+     
+```
+
+```{r Kernal K-Means Clustering}
+kkclusts =
+  tibble::tibble(k = 1:9) %>%
+  mutate(
+    kkclust = map(
+      k,
+      ~ kkmeans(
+        x = as.matrix(points),
         centers = .x,
         kernel = 'rbfdot',
         kpar = list(sigma = 0.005)
