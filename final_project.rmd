@@ -107,7 +107,6 @@ cook_fin_acs =
     cache_table = T
   )
 
-# st_write(cook_fin_acs, "cook_fin_acs.shp", append=FALSE)
 write_csv(cook_fin_acs, "cook_fin_acs.csv")
 
 cook_acs = get_acs(
@@ -127,13 +126,10 @@ cook_acs = get_acs(
   cache_table = T
 )
 
-# st_write(cook_acs, "cook_acs.shp", append=FALSE)
 write_csv(cook_acs, "cook_acs.csv")
 ```
 
 ```{r echo=FALSE, results='hide'}
-# cook_fin_acs = st_read("cook_fin_acs.shp")
-# cook_acs = st_read("cook_acs.shp")
 cook_fin_acs =
   read_csv("cook_fin_acs.csv") %>%
   mutate(GEOID = as.character(GEOID))
@@ -210,6 +206,14 @@ econ_zone_matrix = econ_zone_baked %>% select(c("lat":"mean_commute_minutesM"))
 
 ```{r}
 points = econ_zone_matrix
+test = matrix(0, nrow=dim(as.matrix(points))[1], ncol=dim(as.matrix(points))[2])
+
+stopifnot(
+  # check no na's are present
+  all(!is.na(as.matrix(points))),
+  # check not all zeros
+  all(abs(as.matrix(points) - test) > 0)
+)
 ```
 
 ```{r K-Means Clustering}
@@ -320,8 +324,13 @@ tibble(k = list(1:9)) %>%
 ```
 
 ```{r Kernal K-Means Clustering}
+# Need to set seed for consistency and apparently kernlab kkmeans will produce
+# random errors at time, see:
+# https://stackoverflow.com/questions/73463271/error-in-if-sumabsdc-1e-15-break-missing-value-where-true-false-needed
+set.seed(123)
+
 kkclusts =
-  tibble::tibble(k = 1:9) %>%
+  tibble(k = 1:9) %>%
   mutate(
     kkclust = map(
       k,
@@ -447,19 +456,24 @@ fviz_cluster(
 
 ## GIS Visualizations
 
-```{r}
-# st_write(chicago_transit_acs_tif_aug, "chicago_transit_acs_tif_aug.geojson")
+```{r eval=FALSE}
+st_write(chicago_transit_acs_tif_aug, "chicago_transit_acs_tif_aug.geojson")
 ```
 
 ```{r}
 tif_projects = read_csv("Tax_Increment_Financing__TIF__Annual_Report_-_Projects.csv")
-# tif_projects_agg = 
-#   tif_projects %>%
-#   clean_names() %>%
-#   filter(ongoing == T) %>%
-#   group_by(tif_number) %>%
-#   summarise(total_payments = sum(current_year_payments))
-# write_csv(tif_projects_agg, file = "tif_projects_agg.csv")
+```
+
+
+```{r eval=FALSE}
+tif_projects_agg =
+  tif_projects %>%
+  clean_names() %>%
+  filter(ongoing == T) %>%
+  group_by(tif_number) %>%
+  summarise(total_payments = sum(current_year_payments))
+
+write_csv(tif_projects_agg, file = "tif_projects_agg.csv")
 ```
 
 ```{r}
@@ -467,10 +481,12 @@ cluster_spend = read_csv("EconomicClustering_TIF_Projects.csv")
 ```
 
 ```{r}
+# Generated from ArcGIS
 knitr::include_graphics("Clustering Layout.jpg")
 ```
 
 ```{r}
+# Generated from ArcGIS
 knitr::include_graphics("HH Density Layout.jpg")
 ```
 
