@@ -175,7 +175,7 @@ p1 <- ggMarginal(p, type = "histogram")
 p1
 ```
 
-When we look at the transit accessibility versus propoerty value, we find a light correlation between indicating that those areas with higher property values tend to have more access to transit means, and to some degree, more employment.
+When we look at the transit accessibility versus property value, we find a light correlation between indicating that those areas with higher property values tend to have more access to transit means, and to some degree, more employment.
 
 ```{r echo=F, message=F, fig.width=8, fig.height=6}
 corr = corrgram(
@@ -201,6 +201,10 @@ econ_zone_recipe =
 econ_zone_baked = econ_zone_recipe %>% bake(new_data = NULL)
 econ_zone_matrix = econ_zone_baked %>% select(c("lat":"mean_commute_minutesM"))
 ```
+
+# Clustering for Abstract Socioeconomic Proxies
+
+In this section we attempt to use a couple different clustering methods to try to differentiate different tiers of socioeconomic quality of life.
 
 ## K-Means Clustering
 
@@ -243,6 +247,7 @@ clusterings =
 fviz_nbclust(econ_zone_matrix, FUN = kmeans, method = "wss")
 ```
 
+While it appears that the more clusters we have, the better the results, this does not necessarily make sense for what we are trying to show. For example, how does one look at 10 tiers of development versus 3 or less? Additionally, the actual optimal number according to the "tightness" of the clusters (or how close individual nodes are to each other) is 2.
 
 ```{r}
 fviz_nbclust(econ_zone_matrix, FUN = kmeans, method = "silhouette")
@@ -252,35 +257,52 @@ fviz_nbclust(econ_zone_matrix, FUN = kmeans, method = "silhouette")
 chicago_transit_acs_tif_aug =
   chicago_transit_acs_tif %>%
   mutate(means_2 = kmeans(points, centers = 2)$cluster,
-         means_3 = kmeans(points, centers = 3)$cluster) %>%
-  mutate(
-    km_label_1 = case_when(means_2 == 1 ~ "High Development",
-                           means_2 == 2 ~ "Low Development"),
-    km_label_2 = case_when(
-      means_3 == 1 ~ "Low Development",
-      means_3 == 3 ~ "Medium Development",
-      means_3 == 2 ~ "High Development"
-    )
-  )
+         means_3 = kmeans(points, centers = 3)$cluster) 
 
-transit_aug_table =
-  chicago_transit_acs_tif_aug %>%
-  group_by(km_label_2) %>%
+transit_aug_table_0 =
+  chicago_transit_acs_tif_aug %>% 
+  group_by(means_2) %>%
   summarise(hh_income = median(household_incomeE, na.rm = T),
             prop_value = median(prop_value_medE, na.rm = T),
             transit_avail = median(trans_avail_med, na.rm = T),
             walkability = median(walk_score_med, na.rm = T)) %>%
-  arrange(hh_income)
+  arrange(rowSums(across(where(is.numeric)))) %>%
+  mutate(km_label_1 = case_when(row_number() == 1 ~ "Low Development",
+                                row_number() == 2 ~ "High Development"))
+
+transit_aug_kable_0 = kable(transit_aug_table_0, "html") %>%
+  kable_styling("striped")
+
+transit_aug_table =
+  chicago_transit_acs_tif_aug %>% 
+  group_by(means_3) %>%
+  summarise(hh_income = median(household_incomeE, na.rm = T),
+            prop_value = median(prop_value_medE, na.rm = T),
+            transit_avail = median(trans_avail_med, na.rm = T),
+            walkability = median(walk_score_med, na.rm = T)) %>%
+  arrange(rowSums(across(where(is.numeric)))) %>%
+  mutate(km_label_2 = case_when(row_number() == 1 ~ "Low Development",
+                                row_number() == 2 ~ "Medium Development",
+                                row_number() == 3 ~ "High Development"))
 
 transit_aug_kable = kable(transit_aug_table, "html") %>%
   kable_styling("striped")
 
-# transit_aug_kable %>% save_kable("transit_zone_metrics.png")
-
+transit_aug_kable_0
 transit_aug_kable
 ```
 
+```{r eval=FALSE}
+transit_aug_kable_0 %>% save_kable("transit_zone_metrics_0.png")
+transit_aug_kable %>% save_kable("transit_zone_metrics.png")
+```
+
 ```{r}
+chicago_transit_acs_tif_aug =
+  chicago_transit_acs_tif_aug %>%
+  left_join(transit_aug_table_0 %>% select(means_2, km_label_1)) %>%
+  left_join(transit_aug_table %>% select(means_3, km_label_2))
+
 write_csv(chicago_transit_acs_tif_aug, file = "chicago_transit_acs_tif_aug.csv")
 ```
 
@@ -306,22 +328,6 @@ fviz_cluster(econ_means,
 ```
 
 ## Kernal K-Means Clustering
-
-```{r eval=FALSE}
-tibble(k = list(1:9)) %>%
-  mutate(
-    kkclust = map(
-      k,
-      ~ kkmeans(
-        x = as.matrix(points),
-        centers = .x,
-        kernel = 'rbfdot',
-        kpar = "automatic"
-      )
-    )
-  )
-     
-```
 
 ```{r Kernal K-Means Clustering}
 # Need to set seed for consistency and apparently kernlab kkmeans will produce
@@ -367,18 +373,37 @@ econ_kkmeans = kkmeans(
 ```
 
 ```{r}
+kkm_aug_table =
+  chicago_transit_acs_tif %>%
+  mutate(kkmeans_3 = econ_kkmeans@.Data) %>%
+  group_by(kkmeans_3) %>%
+  summarise(hh_income = median(household_incomeE, na.rm = T),
+            prop_value = median(prop_value_medE, na.rm = T),
+            transit_avail = median(trans_avail_med, na.rm = T),
+            walkability = median(walk_score_med, na.rm = T)) %>%
+  arrange(rowSums(across(where(is.numeric)))) %>%
+  mutate(kkm_label = case_when(row_number() == 1 ~ "Low Development",
+                                row_number() == 2 ~ "Medium Development",
+                                row_number() == 3 ~ "High Development"))
+
 chicago_transit_acs_tif_aug_kkm =
   chicago_transit_acs_tif %>%
-  mutate(
-    kkmeans_3 = econ_kkmeans@.Data,
-    kkm_label = case_when(
-      kkmeans_3 == 1 ~ "Low Development",
-      kkmeans_3 == 3 ~ "Medium Development",
-      kkmeans_3 == 2 ~ "High Development"
-    )
-  ) 
+  mutate(kkmeans_3 = econ_kkmeans@.Data) %>%
+  left_join(kkm_aug_table %>% select(kkmeans_3, kkm_label))
+  
+  
+# chicago_transit_acs_tif_aug_kkm =
+#   chicago_transit_acs_tif %>%
+#   mutate(
+#     kkmeans_3 = econ_kkmeans@.Data,
+#     kkm_label = case_when(
+#       kkmeans_3 == 1 ~ "Low Development",
+#       kkmeans_3 == 3 ~ "Medium Development",
+#       kkmeans_3 == 2 ~ "High Development"
+#     )
+#   ) 
 
-chicago_transit_acs_tif_aug_kkm%>% 
+chicago_transit_acs_tif_aug_kkm %>% 
   group_by(kkm_label) %>%
   summarise(hh_income = median(household_incomeE, na.rm = T),
             prop_value = median(prop_value_medE, na.rm = T),
@@ -413,15 +438,34 @@ db = dbscan(econ_zone_matrix, eps = 2.75, minPts = 4)
 ```
 
 ```{r}
+db_aug_table =
+  chicago_transit_acs_tif %>%
+  mutate(dbmeans_3 = db$cluster) %>%
+  group_by(dbmeans_3) %>%
+  summarise(hh_income = median(household_incomeE, na.rm = T),
+            prop_value = median(prop_value_medE, na.rm = T),
+            transit_avail = median(trans_avail_med, na.rm = T),
+            walkability = median(walk_score_med, na.rm = T)) %>%
+  arrange(rowSums(across(where(is.numeric)))) %>%
+  mutate(db_label = case_when(dbmeans_3 == 0 ~ "Excluded",
+                               row_number() == 1 ~ "Low Development",
+                               row_number() == 2 ~ "Medium Development",
+                               row_number() == 3 ~ "High Development"))
+
 chicago_transit_acs_tif_aug_db =
   chicago_transit_acs_tif %>%
-  mutate(dbmeans_3 = db$cluster,
-         db_label = case_when(
-          dbmeans_3 == 0 ~ "Excluded",
-          dbmeans_3 == 1 ~ "Low Development",
-          dbmeans_3 == 3 ~ "Medium Development",
-          dbmeans_3 == 2 ~ "High Development"
-        )) 
+  mutate(dbmeans_3 = db$cluster) %>%
+  left_join(db_aug_table %>% select(dbmeans_3, db_label))
+
+# chicago_transit_acs_tif_aug_db =
+#   chicago_transit_acs_tif %>%
+#   mutate(dbmeans_3 = db$cluster,
+#          db_label = case_when(
+#           dbmeans_3 == 0 ~ "Excluded",
+#           dbmeans_3 == 1 ~ "Low Development",
+#           dbmeans_3 == 3 ~ "Medium Development",
+#           dbmeans_3 == 2 ~ "High Development"
+#         )) 
     
 chicago_transit_acs_tif_aug_db %>%
   group_by(db_label) %>%
@@ -456,6 +500,8 @@ fviz_cluster(
 
 ## GIS Visualizations
 
+These are visualizations created for a presentation on the methods and results of using clustering for geographic policy analysis. They are based on older ACS data and therefore may not represent the data shown above in the other sections of this notebook. See "Final Presentation.pdf" for the presentation file. 
+
 ```{r eval=FALSE}
 st_write(chicago_transit_acs_tif_aug, "chicago_transit_acs_tif_aug.geojson")
 ```
@@ -463,7 +509,6 @@ st_write(chicago_transit_acs_tif_aug, "chicago_transit_acs_tif_aug.geojson")
 ```{r}
 tif_projects = read_csv("Tax_Increment_Financing__TIF__Annual_Report_-_Projects.csv")
 ```
-
 
 ```{r eval=FALSE}
 tif_projects_agg =
@@ -481,34 +526,36 @@ cluster_spend = read_csv("EconomicClustering_TIF_Projects.csv")
 ```
 
 ```{r}
-# Generated from ArcGIS
+# Generated from ArcGIS using older data
 knitr::include_graphics("Clustering Layout.jpg")
 ```
 
 ```{r}
-# Generated from ArcGIS
+# Generated from ArcGIS using older data
 knitr::include_graphics("HH Density Layout.jpg")
 ```
 
 # Additional Statistical Tests
 
+In the map visualizations we see that there is a mixture of socioeconomic partitions throughout the city. What is the proportion of city that is highly developed?
+
 ```{r}
 table(chicago_transit_acs_tif_aug$km_label_2)
 ```
 
-
 ```{r}
 prop.test(
-  x = 440,
+  x = 29,
   n = length(chicago_transit_acs_tif_aug$km_label_2),
   p = 1/3,
   alternative = "less"
 )
 ```
 
+The p-value for the test is well below a significance level of 0.10. Therefore the null hypothesis is rejected and we can say that less than a third of the city is highly developed.
 
 # Conclusion
 
-Although there aren't any easy metrics to compare across models, the usual k-means clustering appears to work best for a couple reasons. Firstly, it produces, visually anyway, the best separation between clusters. Secondly, it provides better coverage of the points whereas density based methods often exclude large chunks of data. Regardless, all of the models produced fairly sensible results in terms of the aggregate statistics of the groups associated with each label in each model.
+Although there aren't any easy metrics to compare across models, the usual k-means clustering appears to work best for a couple reasons. Firstly, it produces, visually anyway, the best separation between clusters. Secondly, it provides better coverage of the points whereas density based methods often exclude large chunks of data. Thirdly, in comparing the ordering the statistics of the subgroups, i.e. the socioeconomic measures, k-means and kernel k-means had orderings that made the most sense. DBSCAN sometimes had ordering such that when the socioeconomic class increased in tier, the property value might decrease, counter intuitively. Regardless, all of the models produced somewhat sensible results in terms of the aggregate statistics of the groups associated with each label in each model.
 
-TIF district based economic policy tends to have a lot of supply side economics to it. Therefore no matter how one tries to optimize the immediate benefits of the policy will be on those who have the ability to participate in development and the decisions thereof, in other words, land owners, shareholders, corporate managers, etc. On the technical side of things, there are plenty of ways to change the hypothesis space or the model that determines the economic zones. The choice of variables can be chosen to reflect more of industrial supply side of economic, like the value of exports from an area, as opposed to more consumer or residential related statistics.
+TIF district based economic policy tends to have a lot of supply side economics to it. Therefore no matter how one tries to optimize the immediate benefits of the policy will be on those who have more direct ability to participate in development and the decisions thereof, in other words, land owners, shareholders, corporate managers, etc. On the technical side of things, there are plenty of ways to change the hypothesis space or the model that determines the economic zones. The choice of variables can be chosen to reflect more of industrial supply side of economic, like the value of exports from an area, as opposed to more consumer or residential related statistics.
